@@ -8,8 +8,11 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   INVENTREE_SITE_URL: http://localhost:8000
   INVENTREE_DB_ENGINE: django.db.backends.sqlite3
   INVENTREE_DB_NAME: ../inventree_unit_test_db.sqlite3
@@ -23,26 +26,27 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: 3.12
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: 'temurin'
           java-version: '11'
 
       - name: Setup Flutter and FVM
         id: fvm-config-action
-        uses: kuhnroyal/flutter-fvm-config-action@v2
+        uses: kuhnroyal/flutter-fvm-config-action@c378498f1d1962d33039c3989411093ef8a17b2c # v3.3
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ steps.fvm-config-action.outputs.FLUTTER_VERSION }}
           channel: ${{ steps.fvm-config-action.outputs.FLUTTER_CHANNEL }}
@@ -82,9 +86,9 @@ jobs:
 
       - name: Unit Tests
         run: |
-          fvm flutter test --coverage
+          fvm flutter test --coverage --dart-define=INVENTREE_RUN_SERVER_INTEGRATION_TESTS=true
 
       - name: Coveralls
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

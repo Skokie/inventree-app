@@ -32,7 +32,6 @@ class _InvenTreeAppSettingsState extends State<InvenTreeAppSettingsWidget> {
   bool serverSounds = true;
 
   bool reportErrors = true;
-  bool strictHttps = false;
   bool enableLabelPrinting = true;
   bool darkMode = false;
   bool showPk = false;
@@ -59,9 +58,6 @@ class _InvenTreeAppSettingsState extends State<InvenTreeAppSettingsWidget> {
             as bool;
     reportErrors =
         await InvenTreeSettingsManager().getValue(INV_REPORT_ERRORS, true)
-            as bool;
-    strictHttps =
-        await InvenTreeSettingsManager().getValue(INV_STRICT_HTTPS, false)
             as bool;
     screenOrientation =
         await InvenTreeSettingsManager().getValue(
@@ -276,21 +272,6 @@ class _InvenTreeAppSettingsState extends State<InvenTreeAppSettingsWidget> {
                   );
                   setState(() {
                     enableLabelPrinting = value;
-                  });
-                },
-              ),
-            ),
-            ListTile(
-              title: Text(L10().strictHttps),
-              subtitle: Text(L10().strictHttpsDetails),
-              leading: Icon(TablerIcons.lock),
-              trailing: Switch(
-                value: strictHttps,
-                onChanged: (bool value) {
-                  InvenTreeSettingsManager().setValue(INV_STRICT_HTTPS, value);
-                  InvenTreeAPI().onStrictHttpsChanged(value);
-                  setState(() {
-                    strictHttps = value;
                   });
                 },
               ),

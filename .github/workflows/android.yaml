@@ -9,6 +9,9 @@ on:
   push:
     branches:
       - master
+
+permissions:
+  contents: read
   
 jobs:
 
@@ -17,19 +20,21 @@ jobs:
   
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Setup Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
       with:
         distribution: 'temurin'
         java-version: '17'
 
     - name: Setup FVM
       id: fvm-config-action
-      uses: kuhnroyal/flutter-fvm-config-action@v2
+      uses: kuhnroyal/flutter-fvm-config-action@c378498f1d1962d33039c3989411093ef8a17b2c # v3.3
 
-    - uses: subosito/flutter-action@v2
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
         flutter-version: ${{ steps.fvm-config-action.outputs.FLUTTER_VERSION }}
         channel: ${{ steps.fvm-config-action.outputs.FLUTTER_CHANNEL }}
@@ -42,9 +47,10 @@ jobs:
     - run: flutter --version
 
     - name: Setup Gradle
-      uses: gradle/gradle-build-action@v2.4.2
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       with:
         gradle-version: 8.11.1
+        cache-provider: basic
 
     - name: Collect Translation Files
       run: |

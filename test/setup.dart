@@ -61,6 +61,10 @@ void setupTestEnv() {
 }
 
 // Accessors for default testing values
+const bool runServerIntegrationTests = bool.fromEnvironment(
+  "INVENTREE_RUN_SERVER_INTEGRATION_TESTS",
+);
+
 const String testServerAddress = "http://localhost:8000/";
 const String testServerName = "Test Server";
 const String testUsername = "admin";

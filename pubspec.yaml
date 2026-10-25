@@ -12,6 +12,7 @@ dependencies:
   audioplayers: ^6.1.0                    # Play audio files
   cached_network_image: ^3.3.1            # Download and cache remote images
   camera: ^0.11.1                         # Camera
+  crypto: ^3.0.7
   cupertino_icons: ^1.0.8
   currency_formatter: ^2.2.1              # Currency formatting
   custom_image_crop: ^0.1.1               # Crop selected images

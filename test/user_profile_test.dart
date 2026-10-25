@@ -3,7 +3,9 @@
  */
 
 import "package:test/test.dart";
+import "package:inventree/preferences.dart";
 import "package:inventree/user_profile.dart";
+import "package:sembast/sembast.dart";
 
 import "setup.dart";
 
@@ -110,6 +112,97 @@ void main() {
         bool result = await UserProfileDBManager().updateProfile(p);
         expect(result, equals(true));
       }
+    });
+
+    test(
+      "Serializes endpoint-bound trust without persisting the API token",
+      () {
+        final profile = UserProfile(
+          name: "Secure profile",
+          server: "https://inventory.example.com",
+          token: "secret-token",
+          trustedCertificateHost: "inventory.example.com",
+          trustedCertificatePort: 443,
+          trustedCertificateFingerprint: "certificate-sha256",
+        );
+
+        final json = profile.toJson();
+        final restored = UserProfile.fromJson(1, json, false);
+
+        expect(json.containsKey("token"), isFalse);
+        expect(restored.token, isEmpty);
+        expect(restored.trustedCertificateHost, "inventory.example.com");
+        expect(restored.trustedCertificatePort, 443);
+        expect(restored.trustedCertificateFingerprint, "certificate-sha256");
+        expect(
+          restored.trustsCertificate(
+            "inventory.example.com",
+            443,
+            "certificate-sha256",
+          ),
+          isTrue,
+        );
+
+        final legacyTrust = UserProfile.fromJson(2, {
+          "name": "Legacy profile",
+          "server": "https://inventory.example.com",
+          "trustedCertificate": true,
+        }, false);
+        expect(legacyTrust.trustedCertificateFingerprint, isEmpty);
+      },
+    );
+
+    test("Stores API tokens outside the plain profile record", () async {
+      final manager = UserProfileDBManager();
+      final profile = UserProfile(
+        name: "Token profile",
+        server: "https://inventory.example.com",
+        token: "secret-token",
+      );
+
+      expect(await manager.addProfile(profile), isTrue);
+
+      final Database database = await InvenTreePreferencesDB.instance.database;
+      final record = await manager.store.record(profile.key).get(database);
+      expect(record, isA<Map<String, dynamic>>());
+      if (record is! Map<String, dynamic>) {
+        fail("Expected a persisted profile map");
+      }
+
+      expect(record.containsKey("token"), isFalse);
+      expect(
+        (await manager.getProfileByKey(profile.key!))?.token,
+        "secret-token",
+      );
+
+      profile.token = "";
+      expect(await manager.updateProfile(profile), isTrue);
+      expect((await manager.getProfileByKey(profile.key!))?.token, isEmpty);
+    });
+
+    test("Migrates legacy plaintext tokens once", () async {
+      final manager = UserProfileDBManager();
+      final Database database = await InvenTreePreferencesDB.instance.database;
+      final key = await manager.store.add(database, {
+        "name": "Legacy token profile",
+        "server": "https://inventory.example.com",
+        "token": "legacy-token",
+      });
+      expect(key, isA<int>());
+      if (key is! int) {
+        fail("Expected the legacy profile to have an integer key");
+      }
+
+      final profile = await manager.getProfileByKey(key);
+      expect(profile?.token, "legacy-token");
+
+      final migrated = await manager.store.record(key).get(database);
+      expect(migrated, isA<Map<String, dynamic>>());
+      if (migrated is! Map<String, dynamic>) {
+        fail("Expected a migrated profile map");
+      }
+      expect(migrated.containsKey("token"), isFalse);
+      expect((await manager.getProfileByKey(key))?.token, "legacy-token");
     });
   });
 }

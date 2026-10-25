@@ -54,7 +54,6 @@ const String INV_SO_ENABLE = "soEnable";
 const String INV_SO_SHOW_CAMERA = "soShowCamera";
 
 const String INV_REPORT_ERRORS = "reportErrors";
-const String INV_STRICT_HTTPS = "strictHttps";
 
 // Barcode settings
 const String INV_BARCODE_SCAN_DELAY = "barcodeScanDelay";
@@ -172,7 +171,8 @@ class InvenTreeSettingsManager {
     if (value is bool) {
       return value;
     } else if (value is String) {
-      return value.toLowerCase().contains("t");
+      final String normalized = value.trim().toLowerCase();
+      return normalized == "true" || normalized == "t";
     } else {
       return false;
     }

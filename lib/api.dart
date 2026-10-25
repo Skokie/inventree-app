@@ -6,6 +6,7 @@ import "package:flutter/foundation.dart";
 import "package:http/http.dart" as http;
 import "package:http/io_client.dart";
 import "package:intl/intl.dart";
+import "package:crypto/crypto.dart";
 import "package:inventree/main.dart";
 import "package:inventree/widget/progress.dart";
 import "package:one_context/one_context.dart";
@@ -18,7 +19,6 @@ import "package:path_provider/path_provider.dart";
 
 import "package:inventree/api_form.dart";
 import "package:inventree/app_colors.dart";
-import "package:inventree/preferences.dart";
 import "package:inventree/l10.dart";
 import "package:inventree/helpers.dart";
 import "package:inventree/inventree/model.dart";
@@ -29,6 +29,37 @@ import "package:inventree/settings/login.dart";
 import "package:inventree/user_profile.dart";
 import "package:inventree/widget/dialogs.dart";
 import "package:inventree/widget/snacks.dart";
+
+bool isAllowedServerAddress(String address) {
+  final Uri? uri = Uri.tryParse(address);
+
+  if (uri == null ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment) {
+    return false;
+  }
+
+  if (uri.scheme == "https") {
+    return true;
+  }
+
+  return uri.scheme == "http" && _isLoopbackHost(uri.host);
+}
+
+bool _isLoopbackHost(String host) {
+  if (host.toLowerCase() == "localhost") {
+    return true;
+  }
+
+  return InternetAddress.tryParse(host)?.isLoopback ?? false;
+}
+
+bool _hasSameOrigin(Uri first, Uri second) =>
+    first.scheme.toLowerCase() == second.scheme.toLowerCase() &&
+    first.host.toLowerCase() == second.host.toLowerCase() &&
+    first.port == second.port;
 
 /*
  * Class representing an API response from the server
@@ -116,17 +147,11 @@ class APIResponse {
  * so we can accept "dodgy" (e.g. self-signed) certificates
  */
 class InvenTreeFileService extends FileService {
-  InvenTreeFileService({HttpClient? client, bool strictHttps = false}) {
+  InvenTreeFileService({HttpClient? client}) {
     _client = client ?? HttpClient();
-
-    if (_client != null) {
-      _client!.badCertificateCallback = (cert, host, port) {
-        return !strictHttps;
-      };
-    }
   }
 
-  HttpClient? _client;
+  late HttpClient _client;
 
   @override
   Future<FileServiceResponse> get(
@@ -135,7 +160,7 @@ class InvenTreeFileService extends FileService {
   }) async {
     final Uri resolved = Uri.base.resolve(url);
 
-    final HttpClientRequest req = await _client!.getUrl(resolved);
+    final HttpClientRequest req = await _client.getUrl(resolved);
 
     if (headers != null) {
       headers.forEach((key, value) {
@@ -197,7 +222,9 @@ class InvenTreeAPI {
   // Ref: https://github.com/inventree/InvenTree/releases/tag/0.14.0
   static const _minApiVersion = 180;
 
-  bool _strictHttps = false;
+  String? _pendingCertificateHost;
+  int? _pendingCertificatePort;
+  String? _pendingCertificateFingerprint;
 
   // Endpoint for requesting an API token
   static const _URL_TOKEN = "user/me/token/";
@@ -482,13 +509,20 @@ class InvenTreeAPI {
       return false;
     }
 
+    if (!isAllowedServerAddress(address)) {
+      showServerError(
+        address,
+        L10().invalidHost,
+        "Use HTTPS for remote servers. HTTP is allowed only on loopback.",
+      );
+      return false;
+    }
+
     String url = _makeUrl("/api/", base: address);
 
     if (!url.endsWith("/")) {
       url = url + "/";
     }
-
-    await _refreshHttpsPolicy();
 
     debug("Connecting to ${apiUrl}");
 
@@ -568,8 +602,6 @@ class InvenTreeAPI {
     debug("Fetching user token from ${userProfile.server}");
 
     profile = userProfile;
-
-    await _refreshHttpsPolicy();
 
     // Form a name to request the token with
     String platform_name = "inventree-mobile-app";
@@ -962,7 +994,7 @@ class InvenTreeAPI {
           .timeout(Duration(seconds: 10));
 
       // Set headers
-      defaultHeaders().forEach((key, value) {
+      defaultHeaders(requestUri: _uri).forEach((key, value) {
         _request?.headers.set(key, value);
       });
     } on SocketException catch (error) {
@@ -1039,10 +1071,19 @@ class InvenTreeAPI {
     Map<String, dynamic>? fields,
   }) async {
     final uri = Uri.parse(makeApiUrl(url));
+
+    if (!_isServerOrigin(uri) || !isAllowedServerAddress(baseUrl)) {
+      return APIResponse(
+        url: url,
+        method: method,
+        error: "Refusing a cross-origin upload",
+      );
+    }
+
     final request = http.MultipartRequest(method, uri);
 
     // Default headers
-    defaultHeaders().forEach((key, value) {
+    defaultHeaders(requestUri: uri).forEach((key, value) {
       request.headers[key] = value;
     });
 
@@ -1214,28 +1255,18 @@ class InvenTreeAPI {
     return response.isValid() && response.statusCode == 200;
   }
 
-  /*
-   * Create a new HttpClient, with the appropriate certificate handling
-   * Note that for some instances, we may wish to ignore certificate errors (e.g. self-signed certificates)
-   * In this case, we will allow the user to disable "strict HTTPS" mode
-   */
+  /* Create an HttpClient that accepts only a certificate explicitly trusted for this endpoint. */
   HttpClient _createClient() {
     HttpClient client = HttpClient();
 
     client.badCertificateCallback =
         (X509Certificate cert, String host, int port) {
-          // The active profile may have been explicitly trusted by the user
-          // (in-flow, after a prior certificate failure) - honor that first
-          if (profile?.trustedCertificate ?? false) {
-            return true;
-          }
+          final String fingerprint = sha256.convert(cert.der).toString();
+          _pendingCertificateHost = host;
+          _pendingCertificatePort = port;
+          _pendingCertificateFingerprint = fingerprint;
 
-          if (_strictHttps) {
-            return false;
-          }
-
-          // Strict HTTPs not enforced, so we'll ignore the bad cert
-          return true;
+          return profile?.trustsCertificate(host, port, fingerprint) ?? false;
         };
 
     // Set the connection timeout
@@ -1260,22 +1291,9 @@ class InvenTreeAPI {
     _imageCacheManager = null;
   }
 
-  /*
-   * Notify the API that the "strictHttps" setting has been changed.
-   */
-  void onStrictHttpsChanged(bool strictHttps) {
-    if (strictHttps != _strictHttps) {
-      _strictHttps = strictHttps;
-      _resetHttpClient();
-    }
-  }
-
-  Future<void> _refreshHttpsPolicy() async {
-    final bool strictHttps =
-        await InvenTreeSettingsManager().getValue(INV_STRICT_HTTPS, false)
-            as bool;
-
-    onStrictHttpsChanged(strictHttps);
+  bool _isServerOrigin(Uri uri) {
+    final Uri? serverUri = Uri.tryParse(baseUrl);
+    return serverUri != null && _hasSameOrigin(uri, serverUri);
   }
 
   /*
@@ -1319,6 +1337,15 @@ class InvenTreeAPI {
       return null;
     }
 
+    if (!_isServerOrigin(_uri) || !isAllowedServerAddress(baseUrl)) {
+      showServerError(
+        _url,
+        L10().invalidHost,
+        "API requests must use the configured HTTPS server origin.",
+      );
+      return null;
+    }
+
     HttpClientRequest? _request;
 
     // Attempt to open a connection to the server
@@ -1328,7 +1355,7 @@ class InvenTreeAPI {
       _request = await _openUrlWithRetry(method, _uri);
 
       // Default headers
-      defaultHeaders().forEach((key, value) {
+      defaultHeaders(requestUri: _uri).forEach((key, value) {
         _request?.headers.set(key, value);
       });
 
@@ -1439,26 +1466,37 @@ class InvenTreeAPI {
   ) async {
     final UserProfile? prf = profile;
 
-    if (prf == null || prf.trustedCertificate) {
+    final String? fingerprint = _pendingCertificateFingerprint;
+
+    if (prf == null ||
+        uri.scheme != "https" ||
+        !_isServerOrigin(uri) ||
+        _pendingCertificateHost?.toLowerCase() != uri.host.toLowerCase() ||
+        _pendingCertificatePort != uri.port ||
+        fingerprint == null ||
+        fingerprint.isEmpty) {
       // Nothing new to prompt for - surface the original error as-is
       return null;
     }
 
-    final bool trust = await _promptTrustCertificate(uri.host);
+    final bool trust = await _promptTrustCertificate(uri.host, fingerprint);
 
     if (!trust) {
       return null;
     }
 
-    prf.trustedCertificate = true;
+    prf.trustedCertificateHost = uri.host;
+    prf.trustedCertificatePort = uri.port;
+    prf.trustedCertificateFingerprint = fingerprint;
     await UserProfileDBManager().updateProfile(prf);
+    _resetHttpClient();
 
     try {
       final HttpClientRequest request = await httpClient
           .openUrl(method, uri)
           .timeout(Duration(seconds: 10));
 
-      defaultHeaders().forEach((key, value) {
+      defaultHeaders(requestUri: uri).forEach((key, value) {
         request.headers.set(key, value);
       });
 
@@ -1479,12 +1517,12 @@ class InvenTreeAPI {
    * Ask the user whether to trust an otherwise-invalid TLS certificate for
    * the given host. Returns true if they accept.
    */
-  Future<bool> _promptTrustCertificate(String host) async {
+  Future<bool> _promptTrustCertificate(String host, String fingerprint) async {
     final Completer<bool> completer = Completer<bool>();
 
     confirmationDialog(
       L10().serverCertificateError,
-      "${L10().serverCertificateTrust}\n${host}",
+      "${L10().serverCertificateTrust}\n${host}\nSHA-256: ${fingerprint}",
       icon: TablerIcons.shield_exclamation,
       onAccept: () {
         if (!completer.isCompleted) {
@@ -1713,10 +1751,10 @@ class InvenTreeAPI {
   }
 
   // Return a list of request headers
-  Map<String, String> defaultHeaders() {
+  Map<String, String> defaultHeaders({required Uri requestUri}) {
     Map<String, String> headers = {};
 
-    if (hasToken) {
+    if (hasToken && _isServerOrigin(requestUri)) {
       headers[HttpHeaders.authorizationHeader] = _authorizationHeader();
     }
 
@@ -1786,7 +1824,7 @@ class InvenTreeAPI {
           },
         );
       },
-      httpHeaders: defaultHeaders(),
+      httpHeaders: defaultHeaders(requestUri: Uri.parse(url)),
       height: height,
       width: width,
       cacheManager: imageCacheManager,
@@ -1799,10 +1837,7 @@ class InvenTreeAPI {
     return _imageCacheManager ??= CacheManager(
       Config(
         "inventree_network_image",
-        fileService: InvenTreeFileService(
-          client: httpClient,
-          strictHttps: _strictHttps,
-        ),
+        fileService: InvenTreeFileService(client: httpClient),
       ),
     );
   }

@@ -11,7 +11,9 @@ class UserProfile {
     this.server = "",
     this.token = "",
     this.selected = false,
-    this.trustedCertificate = false,
+    this.trustedCertificateHost = "",
+    this.trustedCertificatePort = 0,
+    this.trustedCertificateFingerprint = "",
   });
 
   factory UserProfile.fromJson(
@@ -26,7 +28,10 @@ class UserProfile {
     // may still have it here. UserProfileDBManager migrates this on read.
     token: (json["token"] ?? "") as String,
     selected: isSelected,
-    trustedCertificate: (json["trustedCertificate"] ?? false) as bool,
+    trustedCertificateHost: (json["trustedCertificateHost"] ?? "") as String,
+    trustedCertificatePort: (json["trustedCertificatePort"] ?? 0) as int,
+    trustedCertificateFingerprint:
+        (json["trustedCertificateFingerprint"] ?? "") as String,
   );
 
   // Return true if this profile has a token
@@ -47,9 +52,17 @@ class UserProfile {
 
   bool selected = false;
 
-  // Whether the user has explicitly chosen to trust this server's TLS
-  // certificate despite it failing validation (e.g. self-signed)
-  bool trustedCertificate = false;
+  String trustedCertificateHost = "";
+
+  int trustedCertificatePort = 0;
+
+  String trustedCertificateFingerprint = "";
+
+  bool trustsCertificate(String host, int port, String fingerprint) =>
+      trustedCertificateHost.toLowerCase() == host.toLowerCase() &&
+      trustedCertificatePort == port &&
+      trustedCertificateFingerprint.isNotEmpty &&
+      trustedCertificateFingerprint == fingerprint;
 
   // User ID (will be provided by the server on log-in)
   int user_id = -1;
@@ -57,7 +70,9 @@ class UserProfile {
   Map<String, dynamic> toJson() => {
     "name": name,
     "server": server,
-    "trustedCertificate": trustedCertificate,
+    "trustedCertificateHost": trustedCertificateHost,
+    "trustedCertificatePort": trustedCertificatePort,
+    "trustedCertificateFingerprint": trustedCertificateFingerprint,
   };
 
   @override

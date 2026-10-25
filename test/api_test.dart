@@ -42,9 +42,112 @@ void main() {
         expect(api.makeApiUrl(test.key), equals(test.value));
       }
     });
+
+    test("Require HTTPS except for loopback servers", () {
+      expect(isAllowedServerAddress("https://inventory.example.com"), isTrue);
+      expect(isAllowedServerAddress("http://localhost:8000"), isTrue);
+      expect(isAllowedServerAddress("http://127.0.0.1:8000"), isTrue);
+      expect(isAllowedServerAddress("http://inventory.example.com"), isFalse);
+      expect(
+        isAllowedServerAddress("https://user:pass@inventory.example.com"),
+        isFalse,
+      );
+      expect(isAllowedServerAddress("javascript:alert(1)"), isFalse);
+    });
+
+    test("Scope API tokens to the configured origin", () async {
+      final profile = await setupServerProfile();
+      profile.token = "test-token";
+      final api = InvenTreeAPI()..profile = profile;
+
+      expect(
+        api.defaultHeaders(
+          requestUri: Uri.parse(testServerAddress),
+        )["authorization"],
+        "Token test-token",
+      );
+      expect(
+        api.defaultHeaders(
+          requestUri: Uri.parse("https://external.example/image.png"),
+        )["authorization"],
+        isNull,
+      );
+    });
+
+    test("Trust a certificate only for its exact endpoint and fingerprint", () {
+      final profile = UserProfile(
+        trustedCertificateHost: "inventory.example.com",
+        trustedCertificatePort: 443,
+        trustedCertificateFingerprint: "trusted-fingerprint",
+      );
+
+      expect(
+        profile.trustsCertificate(
+          "inventory.example.com",
+          443,
+          "trusted-fingerprint",
+        ),
+        isTrue,
+      );
+      expect(
+        profile.trustsCertificate(
+          "other.example.com",
+          443,
+          "trusted-fingerprint",
+        ),
+        isFalse,
+      );
+      expect(
+        profile.trustsCertificate(
+          "inventory.example.com",
+          8443,
+          "trusted-fingerprint",
+        ),
+        isFalse,
+      );
+      expect(
+        profile.trustsCertificate(
+          "inventory.example.com",
+          443,
+          "different-fingerprint",
+        ),
+        isFalse,
+      );
+    });
   });
 
-  group("Login Tests:", () {
+  group("APIResponse:", () {
+    test("classifies successful and client error responses", () {
+      final success = APIResponse(statusCode: 201, data: {"created": true});
+      expect(success.isValid(), isTrue);
+      expect(success.successful(), isTrue);
+      expect(success.clientError(), isFalse);
+      expect(success.asMap(), {"created": true});
+
+      final clientError = APIResponse(statusCode: 404, data: ["missing"]);
+      expect(clientError.isValid(), isTrue);
+      expect(clientError.successful(), isFalse);
+      expect(clientError.clientError(), isTrue);
+      expect(clientError.asList(), ["missing"]);
+
+      final serverError = APIResponse(statusCode: 503);
+      expect(serverError.isValid(), isFalse);
+      expect(serverError.serverError(), isTrue);
+      expect(serverError.asMap(), isEmpty);
+      expect(serverError.asList(), isEmpty);
+    });
+
+    test("supports empty and invalid response defaults", () {
+      final response = APIResponse();
+      expect(response.isValid(), isFalse);
+      expect(response.successful(), isFalse);
+      expect(response.redirected(), isFalse);
+      expect(response.clientError(), isFalse);
+      expect(response.serverError(), isFalse);
+    });
+  });
+
+  group("Login Tests:", skip: !runServerIntegrationTests, () {
     test("Disconnected", () async {
       // Test that calling disconnect() does the right thing
       var api = InvenTreeAPI();

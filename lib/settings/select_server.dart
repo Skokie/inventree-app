@@ -422,8 +422,10 @@ class _ProfileEditState extends State<ProfileEditWidget> {
                   }
 
                   if (!value.startsWith("http:") &&
-                      !value.startsWith("https:")) {
-                    // return L10().serverStart;
+                      !value.startsWith("https:") &&
+                      !value.startsWith("http://127.0.0.1") &&
+                      !value.startsWith("https://127.0.0.1")) {
+                    return L10().serverStart;
                   }
 
                   Uri? _uri = Uri.tryParse(value);
@@ -431,6 +433,10 @@ class _ProfileEditState extends State<ProfileEditWidget> {
                   if (_uri == null || _uri.host.isEmpty) {
                     return L10().invalidHost;
                   } else {
+                    if (!isAllowedServerAddress(value)) {
+                      return L10().invalidHost;
+                    }
+
                     Uri uri = Uri.parse(value);
 
                     if (uri.hasScheme) {

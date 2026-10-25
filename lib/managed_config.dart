@@ -125,7 +125,6 @@ const List<ManagedSetting> MANAGED_SETTINGS = [
     },
   ),
   ManagedSetting(INV_ENABLE_LABEL_PRINTING, ManagedSettingType.boolean),
-  ManagedSetting(INV_STRICT_HTTPS, ManagedSettingType.boolean),
   ManagedSetting(INV_REPORT_ERRORS, ManagedSettingType.boolean),
   ManagedSetting(INV_SOUNDS_BARCODE, ManagedSettingType.boolean),
   ManagedSetting(INV_SOUNDS_SERVER, ManagedSettingType.boolean),

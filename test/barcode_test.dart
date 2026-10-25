@@ -18,12 +18,24 @@ import "package:inventree/inventree/stock.dart";
 
 import "setup.dart";
 
+class RecordingLocationHandler extends BarcodeScanStockLocationHandler {
+  int? scannedLocation;
+
+  @override
+  Future<bool> onLocationScanned(int locationId) async {
+    scannedLocation = locationId;
+    return true;
+  }
+}
+
 void main() {
   setupTestEnv();
 
   // Connect to the server
   setUpAll(() async {
-    await connectToTestServer();
+    if (runServerIntegrationTests) {
+      await connectToTestServer();
+    }
   });
 
   setUp(() async {
@@ -31,7 +43,19 @@ void main() {
     clearDebugMessage();
   });
 
-  group("Test BarcodeScanHandler:", () {
+  group("Barcode payload unit tests:", () {
+    test("dispatches a stock-location barcode to the callback", () async {
+      final handler = RecordingLocationHandler();
+
+      await handler.onBarcodeMatched({
+        "stocklocation": {"pk": 17},
+      });
+
+      expect(handler.scannedLocation, 17);
+    });
+  });
+
+  group("Test BarcodeScanHandler:", skip: !runServerIntegrationTests, () {
     // Tests for scanning a "generic" barcode
 
     var handler = BarcodeScanHandler();
@@ -65,91 +89,103 @@ void main() {
     });
   });
 
-  group("Test StockItemScanIntoLocationHandler:", () {
-    // Tests for scanning a stock item into a location
+  group(
+    "Test StockItemScanIntoLocationHandler:",
+    skip: !runServerIntegrationTests,
+    () {
+      // Tests for scanning a stock item into a location
 
-    test("Scan Into Location", () async {
-      final item = await InvenTreeStockItem().get(2) as InvenTreeStockItem?;
-      assert(item != null);
-
-      assert(item!.pk == 2);
-
-      final int originalLocation = item!.locationId;
-
-      var handler = StockItemScanIntoLocationHandler(item);
-
-      await handler.processBarcode('{"stocklocation": 7}');
-      // Check the location has been updated
-      await item.reload();
-      assert(item.locationId == 7);
-
-      debugContains("Scanned stock location 7");
-
-      // Scan into a new location
-      await handler.processBarcode('{"stocklocation": 1}');
-      await item.reload();
-      assert(item.locationId == 1);
-
-      // Return to the original location
-      await handler.processBarcode('{"stocklocation": ${originalLocation}}');
-      await item.reload();
-      assert(item.locationId == originalLocation);
-    });
-  });
-
-  group("Test StockLocationScanInItemsHandler:", () {
-    // Tests for scanning items into a stock location
-
-    test("Scan In Items", () async {
-      final location =
-          await InvenTreeStockLocation().get(1) as InvenTreeStockLocation?;
-
-      assert(location != null);
-      assert(location!.pk == 1);
-
-      var handler = StockLocationScanInItemsHandler(location!);
-
-      // Scan multiple items into this location
-      for (int id in [2, 3, 11]) {
-        await handler.processBarcode('{"stockitem": ${id}}');
-
-        var item = await InvenTreeStockItem().get(id) as InvenTreeStockItem?;
-
+      test("Scan Into Location", () async {
+        final item = await InvenTreeStockItem().get(2) as InvenTreeStockItem?;
         assert(item != null);
-        assert(item!.pk == id);
-        assert(int.tryParse(item!.locationId.toString()) != null);
-      }
-    });
-  });
 
-  group("Test ScanParentLocationHandler:", () {
-    // Tests for scanning a location into a parent location
+        assert(item!.pk == 2);
 
-    test("Scan Parent", () async {
-      final location =
-          await InvenTreeStockLocation().get(5) as InvenTreeStockLocation?;
+        final int originalLocation = item!.locationId;
 
-      assert(location != null);
-      assert(location!.pk == 5);
-      assert(location!.parentId == 4);
+        var handler = StockItemScanIntoLocationHandler(item);
 
-      var handler = ScanParentLocationHandler(location!);
+        await handler.processBarcode('{"stocklocation": 7}');
+        // Check the location has been updated
+        await item.reload();
+        assert(item.locationId == 7);
 
-      // Scan into new parent location
-      await handler.processBarcode('{"stocklocation": 1}');
-      await location.reload();
-      assert(location.parentId == 1);
+        debugContains("Scanned stock location 7");
 
-      // Scan back into old parent location
-      await handler.processBarcode('{"stocklocation": 4}');
-      await location.reload();
-      assert(location.parentId == 4);
+        // Scan into a new location
+        await handler.processBarcode('{"stocklocation": 1}');
+        await item.reload();
+        assert(item.locationId == 1);
 
-      debugContains("showSnackIcon: 'Scanned into location'");
-    });
-  });
+        // Return to the original location
+        await handler.processBarcode('{"stocklocation": ${originalLocation}}');
+        await item.reload();
+        assert(item.locationId == originalLocation);
+      });
+    },
+  );
 
-  group("Test PartBarcodes:", () {
+  group(
+    "Test StockLocationScanInItemsHandler:",
+    skip: !runServerIntegrationTests,
+    () {
+      // Tests for scanning items into a stock location
+
+      test("Scan In Items", () async {
+        final location =
+            await InvenTreeStockLocation().get(1) as InvenTreeStockLocation?;
+
+        assert(location != null);
+        assert(location!.pk == 1);
+
+        var handler = StockLocationScanInItemsHandler(location!);
+
+        // Scan multiple items into this location
+        for (int id in [2, 3, 11]) {
+          await handler.processBarcode('{"stockitem": ${id}}');
+
+          var item = await InvenTreeStockItem().get(id) as InvenTreeStockItem?;
+
+          assert(item != null);
+          assert(item!.pk == id);
+          assert(int.tryParse(item!.locationId.toString()) != null);
+        }
+      });
+    },
+  );
+
+  group(
+    "Test ScanParentLocationHandler:",
+    skip: !runServerIntegrationTests,
+    () {
+      // Tests for scanning a location into a parent location
+
+      test("Scan Parent", () async {
+        final location =
+            await InvenTreeStockLocation().get(5) as InvenTreeStockLocation?;
+
+        assert(location != null);
+        assert(location!.pk == 5);
+        assert(location!.parentId == 4);
+
+        var handler = ScanParentLocationHandler(location!);
+
+        // Scan into new parent location
+        await handler.processBarcode('{"stocklocation": 1}');
+        await location.reload();
+        assert(location.parentId == 1);
+
+        // Scan back into old parent location
+        await handler.processBarcode('{"stocklocation": 4}');
+        await location.reload();
+        assert(location.parentId == 4);
+
+        debugContains("showSnackIcon: 'Scanned into location'");
+      });
+    },
+  );
+
+  group("Test PartBarcodes:", skip: !runServerIntegrationTests, () {
     // Assign a custom barcode to a Part instance
     test("Assign Barcode", () async {
       // Unlink barcode first

@@ -87,11 +87,14 @@ class InvenTreeModel {
         return backup;
       }
 
-      dynamic sub_data = data[subKey];
+      final dynamic subData = data[subKey];
 
-      if (sub_data is Map<String, dynamic>) {
-        data = (data[subKey] ?? {}) as Map<String, dynamic>;
+      if (subData is! Map<String, dynamic>) {
+        debug("JSON subKey '$subKey' is not a map for key '$key'");
+        return backup;
       }
+
+      data = subData;
     }
 
     if (data.containsKey(key)) {
@@ -113,7 +116,7 @@ class InvenTreeModel {
       return backup;
     }
 
-    return value as Map<String, dynamic>;
+    return value is Map<String, dynamic> ? value : backup;
   }
 
   // Helper function to get string value from JSON data
@@ -173,7 +176,15 @@ class InvenTreeModel {
       return backup;
     }
 
-    return DateTime.tryParse(value as String);
+    if (value is DateTime) {
+      return value;
+    }
+
+    if (value is! String) {
+      return backup;
+    }
+
+    return DateTime.tryParse(value);
   }
 
   // Helper function to get date as a string

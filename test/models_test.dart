@@ -17,7 +17,7 @@ void main() {
     await connectToTestServer();
   });
 
-  group("Category Tests:", () {
+  group("Category Tests:", skip: !runServerIntegrationTests, () {
     test("Basics", () async {
       assert(InvenTreePartCategory().URL == "part/category/");
     });
@@ -40,7 +40,7 @@ void main() {
     });
   });
 
-  group("Part Tests:", () {
+  group("Part Tests:", skip: !runServerIntegrationTests, () {
     test("Basics", () async {
       assert(InvenTreePart().URL == "part/");
     });
