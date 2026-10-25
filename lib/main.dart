@@ -25,12 +25,12 @@ import "package:inventree/user_profile.dart";
 import "package:inventree/widget/home.dart";
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  AdaptiveThemeMode? savedThemeMode = await AdaptiveTheme.getThemeMode();
-
   await runZonedGuarded<Future<void>>(
     () async {
+      WidgetsFlutterBinding.ensureInitialized();
+
+      AdaptiveThemeMode? savedThemeMode = await AdaptiveTheme.getThemeMode();
+
       PackageInfo info = await PackageInfo.fromPlatform();
       String pkg = info.packageName;
       String version = info.version;

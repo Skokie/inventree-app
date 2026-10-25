@@ -63,3 +63,50 @@ jobs:
         fvm install
         fvm flutter pub get
         fvm flutter build apk --debug
+
+  security-integration:
+    name: Security UI integration
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Setup Java
+      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Setup Flutter and FVM
+      id: fvm-config-action
+      uses: kuhnroyal/flutter-fvm-config-action@c378498f1d1962d33039c3989411093ef8a17b2c # v3.3
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      with:
+        flutter-version: ${{ steps.fvm-config-action.outputs.FLUTTER_VERSION }}
+        channel: ${{ steps.fvm-config-action.outputs.FLUTTER_CHANNEL }}
+        cache: true
+
+    - name: Collect Translation Files
+      run: |
+        cd lib/l10n
+        python3 collect_translations.py
+
+    - name: Install Flutter dependencies
+      run: |
+        dart pub global activate fvm
+        fvm install
+        fvm flutter pub get
+
+    - name: Run profile security flow on Android emulator
+      uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+      with:
+        api-level: 35
+        arch: x86_64
+        profile: pixel_6
+        disable-animations: true
+        script: fvm flutter test integration_test/security_profile_flow_test.dart -d emulator-5554
